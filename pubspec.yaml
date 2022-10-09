@@ -1,6 +1,7 @@
 name: dev_helper
 description: Some helper functions such as logger.
 version: 0.0.1
+homepage: https://github.com/chenzhiguang/dev_helper
 
 environment:
   sdk: '>=2.18.2 <3.0.0'
