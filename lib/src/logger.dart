@@ -1,43 +1,82 @@
 import 'dart:io';
 
-/// Creates a logger which outputs the string result to a log [file].
+import 'package:path_provider/path_provider.dart';
+
 class Logger {
   Logger({
-    required this.file,
-    this.dir = '/tmp/logs/',
+    required String file,
     bool empty = true,
-  }) {
-    if (empty) {
-      emptyFile(path);
+  })  : _file = file,
+        _empty = empty;
+
+  final String _file;
+  final bool _empty;
+
+  File? _fileSystem;
+  final _stack = <_Command>[];
+  bool _preparing = false;
+  String? _leadingLineEnding;
+
+  Future<void> _runStack() async {
+    if (_stack.isEmpty || _preparing) {
+      return;
     }
-  }
 
-  final String dir;
-  final String file;
-
-  String get path => '$dir/$file';
-
-  /// Logs the given [message] to [file].
-  void log(Object? message) => logToFile(message, path, append: true);
-
-  /// Logs the given [message] to [file].
-  static void logToFile(Object? message, String file, {bool append = false}) {
-    final fileObject = File(file);
-    var content = message is String ? message : message.toString();
-
-    if (append) {
-      final oldContent = fileObject.readAsStringSync();
-
-      if (oldContent.isNotEmpty) {
-        content = '$oldContent\n$message';
+    if (_fileSystem == null) {
+      _preparing = true;
+      final tmpDir = await getTemporaryDirectory();
+      final logsDir = Directory('${tmpDir.path}/dev_helper/logs');
+      if (!(await logsDir.exists())) {
+        await logsDir.create(recursive: true);
       }
+
+      final path = '${logsDir.path}/$_file';
+      _fileSystem = File(path);
+      _preparing = false;
+
+      if (_empty) {
+        _fileSystem!.writeAsStringSync('');
+      }
+      print('Log file: $path');
     }
 
-    fileObject.writeAsStringSync(content);
+    var command = _stack.removeAt(0);
+
+    switch (command.action) {
+      case _Action.empty:
+        _fileSystem!.writeAsStringSync('');
+        _leadingLineEnding = null;
+        break;
+      case _Action.write:
+        var message = command.value!;
+        if (_leadingLineEnding == null) {
+          _leadingLineEnding = '\n';
+        } else {
+          message = '$_leadingLineEnding$message';
+        }
+
+        _fileSystem!.writeAsStringSync(message, mode: FileMode.append);
+
+        break;
+    }
+
+    _runStack();
   }
 
-  /// Empties a file.
-  static void emptyFile(String file) {
-    File(file).writeAsStringSync('');
+  void log(Object? message, {bool empty = false}) {
+    if (empty) {
+      _stack.add(_Command(_Action.empty));
+    }
+    _stack.add(_Command(_Action.write, message.toString()));
+    _runStack();
   }
+}
+
+enum _Action { write, empty }
+
+class _Command {
+  _Command(this.action, [this.value]);
+
+  final _Action action;
+  final String? value;
 }
